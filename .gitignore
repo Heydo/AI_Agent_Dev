@@ -1,0 +1,32 @@
+# ---- dependencies ----
+node_modules/
+.bun/
+
+# ---- build outputs ----
+.next/
+dist/
+out/
+*.tsbuildinfo
+
+# ---- turbo / caches ----
+.turbo/
+
+# ---- env (never commit real secrets) ----
+.env
+.env.*
+!.env.example
+
+# ---- logs ----
+*.log
+npm-debug.log*
+yarn-error.log*
+bun-error.log*
+
+# ---- OS / editor ----
+.DS_Store
+coverage/
+.vscode/
+.idea/
+
+# ---- misc ----
+*.local

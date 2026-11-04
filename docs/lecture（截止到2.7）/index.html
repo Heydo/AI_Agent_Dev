@@ -1,0 +1,1287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>第二章讲义 · 一个 monorepo 的完整拆解</title>
+  <meta name="description" content="把 AI_Agent_Dev 从目录结构、Turbo、Bun、Next 到 Nest 的动态可视化讲义。" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="progress"></div>
+
+  <nav id="nav">
+    <div class="brand">第二章 · <b>拆解</b></div>
+    <div class="navlinks">
+      <a href="#overview">全景</a>
+      <a href="#structure">构成</a>
+      <a href="#monorepo">Workspaces</a>
+      <a href="#root">根配置</a>
+      <a href="#turbo">Turbo</a>
+      <a href="#install">依赖安装</a>
+      <a href="#contracts">契约</a>
+      <a href="#tsconfig">TS 边界</a>
+      <a href="#web">前端</a>
+      <a href="#api">后端</a>
+      <a href="#bun">Bun vs Node</a>
+      <a href="#startup">启动</a>
+      <a href="#request">请求</a>
+      <a href="#pitfalls">踩坑</a>
+      <a href="#diff">差异</a>
+      <a href="#quiz">自测</a>
+      <a href="#next">下一步</a>
+    </div>
+  </nav>
+
+  <!-- ================= HERO ================= -->
+  <header class="hero" id="top">
+    <div class="hero-bg">
+      <div class="blob b1"></div>
+      <div class="blob b2"></div>
+      <div class="blob b3"></div>
+    </div>
+    <div class="hero-inner">
+      <div class="hero-kicker"><span class="pulse-dot"></span> AI Agent Dev · 第二章复盘 · 2026-11-04</div>
+      <h1>这个项目，<br /><span class="grad">到底是怎么跑起来的？</span></h1>
+      <p class="hero-lede">
+        3 个包、2 个进程、1 条命令。把 <b>monorepo、Turborepo、Bun、Next、Nest</b> 之间那根看不见的线，
+        一段一段拆开给你看。每一条配置，都会回答三个问题：它是什么、为什么需要它、不写会怎样。
+      </p>
+      <div class="hero-meta">
+        <span class="chip cyan">Bun <b>1.4.4</b></span>
+        <span class="chip violet">Turborepo <b>2.11.10</b></span>
+        <span class="chip">Next <b>16.4.5</b></span>
+        <span class="chip">NestJS <b>12</b></span>
+        <span class="chip green">已跑通到 <b>2.7</b></span>
+      </div>
+      <div class="hero-cta">
+        <a class="btn primary" href="#overview">开始拆解 ↓</a>
+        <a class="btn ghost" href="#request">直接看请求链路</a>
+      </div>
+      <div class="hero-diagram">
+        <div class="hd-card c1">
+          <div class="hd-label">clients / 客户端</div>
+          <div class="hd-title">chat-web</div>
+          <div class="hd-sub">Next.js · 浏览器里跑的界面</div>
+          <div class="hd-port">:3002</div>
+        </div>
+        <div class="hd-card c2">
+          <div class="hd-label">services / 服务进程</div>
+          <div class="hd-title">chat</div>
+          <div class="hd-sub">NestJS · 留在服务器上的 API</div>
+          <div class="hd-port">:4001</div>
+        </div>
+        <div class="hd-card c3">
+          <div class="hd-label">packages / 共享代码</div>
+          <div class="hd-title">contracts</div>
+          <div class="hd-sub">两端共享的常量 / 类型（APP_NAME）</div>
+          <div class="hd-port">workspace</div>
+        </div>
+      </div>
+      <div class="scroll-hint" role="button" tabindex="0"><span class="mouse"></span> 往下滚，每一节都可以动手玩</div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ================= 00 OVERVIEW ================= -->
+    <section class="section" id="overview">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">00 / 全景</div>
+          <h2>一张图看懂：一个仓库，三个包，两个进程</h2>
+          <p class="lede">
+            这个仓库不是"一个项目"，而是<b>三个独立包</b>被同一个根目录管理。根目录只负责调度，
+            真正干活的是 clients、services、packages 里各自的 package.json。
+          </p>
+        </div>
+
+        <div class="grid grid-3 reveal">
+          <div class="card">
+            <div class="ic">🖥️</div>
+            <h3>clients/ · 客户端应用</h3>
+            <p>面向用户的界面，最终被浏览器下载执行。这里是 <code>chat-web</code>：Next.js + React，开发端口 3002。</p>
+            <p class="dim">产物是 HTML / JS / CSS，用户看得见。</p>
+          </div>
+          <div class="card violet">
+            <div class="ic">🧠</div>
+            <h3>services/ · 服务进程</h3>
+            <p>长期驻留在服务器上的进程，对外提供 API。这里是 <code>chat</code>：NestJS，端口 4001。</p>
+            <p class="dim">产物是"一直在跑"的进程，用户看不见。</p>
+          </div>
+          <div class="card green">
+            <div class="ic">🔗</div>
+            <h3>packages/ · 共享子包</h3>
+            <p>不属于任何一端、但两端都要用的代码。这里是 <code>contracts</code>：放 <code>APP_NAME</code> 这类契约。</p>
+            <p class="dim">产物是被别人 import 的源码 / 类型。</p>
+          </div>
+        </div>
+
+        <div class="grid grid-2 reveal" style="margin-top:16px">
+          <div class="card">
+            <h3>🚀 启动链路（一条命令起两个进程）</h3>
+            <div class="chain">
+              <span class="node2">bun run dev</span>
+              <span class="arr">→</span>
+              <span class="node2">clean:ports</span>
+              <span class="arr">→</span>
+              <span class="node2 hi">turbo run dev</span>
+            </div>
+            <div class="chain">
+              <span class="node2">@autix/chat</span>
+              <span class="arr">→</span>
+              <span class="node2 hi">:4001</span>
+              <span class="arr">→</span>
+              <span class="node2">wait-on</span>
+              <span class="arr">→</span>
+              <span class="node2">chat-web :3002</span>
+            </div>
+            <a class="hint-link" href="#startup">▶ 完整时序在 <b>11 · 启动链路</b>，可以点播放。</a>
+          </div>
+          <div class="card">
+            <h3>🌐 请求链路（点一次按钮发生了什么）</h3>
+            <div class="chain">
+              <span class="node2">页面按钮</span>
+              <span class="arr">→</span>
+              <span class="node2">fetch</span>
+              <span class="arr">→</span>
+              <span class="node2 hi">GET :4001/hello</span>
+              <span class="arr">→</span>
+              <span class="node2">Nest</span>
+            </div>
+            <div class="chain">
+              <span class="node2">contracts</span>
+              <span class="arr">→</span>
+              <span class="node2">JSON</span>
+              <span class="arr">→</span>
+              <span class="node2 hi">setState</span>
+              <span class="arr">→</span>
+              <span class="node2">重渲染</span>
+            </div>
+            <a class="hint-link" href="#request">▶ 可以亲手触发一次：<b>12 · 请求链路</b>。</a>
+          </div>
+        </div>
+
+        <div class="callout tip reveal" style="margin-top:16px">
+          <div class="ci">💡</div>
+          <div>
+            <b>关键认知：clients 和 services 互相不 import。</b>
+            它们只共享 contracts 这个包，彼此之间只通过 HTTP 说话。前端不知道后端是 Nest 还是 Express，
+            后端也不知道前端是 Next 还是 Vue——这条边界，就是"前后端分离"在代码层面的样子。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 01 STRUCTURE ================= -->
+    <section class="section" id="structure">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">01 / 项目构成</div>
+          <h2>每个目录，都是一个独立的包</h2>
+          <p class="lede">
+            点左边任意一个节点，右边会告诉你：它是什么、里面有什么、为什么放在这一层。
+          </p>
+        </div>
+
+        <div class="explorer reveal">
+          <div class="tree" id="treeList">
+            <button class="tree-node active" data-node="root"><span class="folder">▸</span> AI_Agent_Dev/</button>
+            <button class="tree-node" data-node="clients"><span class="lvl">├─</span><span class="folder">▸</span> clients/</button>
+            <button class="tree-node" data-node="chat-web"><span class="lvl">│&nbsp;&nbsp;├─</span><span class="folder">▸</span> chat-web/</button>
+            <button class="tree-node" data-node="services"><span class="lvl">├─</span><span class="folder">▸</span> services/</button>
+            <button class="tree-node" data-node="chat"><span class="lvl">│&nbsp;&nbsp;├─</span><span class="folder">▸</span> chat/</button>
+            <button class="tree-node" data-node="packages"><span class="lvl">├─</span><span class="folder">▸</span> packages/</button>
+            <button class="tree-node" data-node="contracts"><span class="lvl">│&nbsp;&nbsp;├─</span><span class="folder">▸</span> contracts/</button>
+            <button class="tree-node" data-node="infra"><span class="lvl">├─</span><span class="folder">▸</span> infra/</button>
+            <button class="tree-node" data-node="configs"><span class="lvl">├─</span><span class="file">⚙</span> 根配置文件</button>
+            <button class="tree-node" data-node="docs"><span class="lvl">└─</span><span class="file">📄</span> README / docs</button>
+          </div>
+          <div class="panel" id="treePanel">
+            <h3>AI_Agent_Dev/</h3>
+            <div class="path">仓库根目录</div>
+            <p>只负责"怎么把三个包一起跑起来"，自己不含业务代码。根 package.json 是调度台，workspaces 字段把三个目录纳入同一个依赖图。</p>
+            <ul>
+              <li><code>package.json</code>：脚本、workspaces、包管理器版本</li>
+              <li><code>turbo.json</code>：任务编排规则</li>
+              <li><code>bunfig.toml</code>：依赖安装方式（isolated）</li>
+              <li><code>tsconfig.base.json</code>：共享的 TS 编译选项与路径别名</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 02 MONOREPO ================= -->
+    <section class="section" id="monorepo">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">02 / Monorepo 与 Workspaces</div>
+          <h2>为什么不是三个 repo，而是三个目录？</h2>
+          <p class="lede">
+            monorepo 不是为了"看起来高级"。它解决的是：改一个共享常量，要在三个仓库里各改一遍、发三个版本、等三次 CI 的痛苦。
+          </p>
+        </div>
+
+        <div class="grid grid-3 reveal">
+          <div class="card">
+            <div class="ic">🧩</div>
+            <h3>共享代码零发布</h3>
+            <p>改 <code>contracts</code> 里的 <code>APP_NAME</code>，前端和后端下一次编译立刻拿到新值，不需要 <code>npm publish</code>。</p>
+          </div>
+          <div class="card violet">
+            <div class="ic">🔒</div>
+            <h3>依赖版本只有一个真相</h3>
+            <p>根目录的 bun.lock 锁住整个图。Next / React / Nest 的版本在三个包里不会各说各话。</p>
+          </div>
+          <div class="card green">
+            <div class="ic">⚛️</div>
+            <h3>一次改动 = 一次提交</h3>
+            <p>契约、复用方、调用方在同一个 commit 里，review 时能看到完整影响面。</p>
+          </div>
+        </div>
+
+        <div class="grid grid-2 reveal" style="margin-top:16px">
+          <div class="card">
+            <h3>workspaces：把目录变成包</h3>
+            <p>根 package.json 里的三个 glob，就是"包"的发现规则：</p>
+            <pre class="code" style="margin-top:10px">"workspaces": [
+  "clients/*",
+  "services/*",
+  "packages/*"
+]</pre>
+            <p style="margin-top:10px">每个匹配到的目录里必须有 <code>package.json</code>，且 <code>name</code> 唯一：<code>@autix/chat-web</code>、<code>@autix/chat</code>、<code>@autix/contracts</code>。</p>
+          </div>
+          <div class="card">
+            <h3><code>workspace:*</code> 是什么？</h3>
+            <p>chat-web 和 chat 在 dependencies 里写：</p>
+            <pre class="code" style="margin-top:10px">"@autix/contracts": "workspace:*"</pre>
+            <p style="margin-top:10px">意思是"用仓库里的那一份，不要从 npm 下载"。Bun 安装时会把它软链到本地目录，所以改源码立即生效。</p>
+            <div class="chip green" style="margin-top:10px">改 contracts → 两个包同时看到</div>
+          </div>
+        </div>
+
+        <div class="callout reveal" style="margin-top:16px">
+          <div class="ci">🧭</div>
+          <div><b>命名即边界：</b><code>@autix/</code> 是作用域。它让 workspace 里的包一眼可辨，也避免了"客户端包名少写作用域导致 Turbo filter 找不到包"这种坑（真实踩过，见 <a href="#pitfalls">13 · 踩坑档案</a>）。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 03 ROOT PACKAGE ================= -->
+    <section class="section" id="root">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">03 / 根 package.json</div>
+          <h2>整个仓库的"调度台"</h2>
+          <p class="lede">
+            点左边的字段或右边的按钮，下面会解释这个字段为什么存在。<b>根 package.json 里没有一行业务代码</b>，全是"怎么协作"。
+          </p>
+        </div>
+
+        <div class="pj-wrap reveal">
+          <div class="pj-code">
+            <pre class="code"><span class="pj-key" data-pj="name">"name"</span>: "root",
+<span class="pj-key" data-pj="private">"private"</span>: true,
+<span class="pj-key" data-pj="workspaces">"workspaces"</span>: ["clients/*", "services/*", "packages/*"],
+<span class="pj-key" data-pj="packageManager">"packageManager"</span>: "bun@1.4.4",
+<span class="pj-key" data-pj="scripts">"scripts"</span>: {
+  "clean:ports": "for port in 3002 4001; do ... done",
+  "dev": "bun run clean:ports && turbo run dev --parallel --filter=@autix/chat --filter=@autix/chat-web",
+  "dev:chat-web": "turbo run dev --filter=@autix/chat-web",
+  "dev:chat": "turbo run dev --filter=@autix/chat",
+  "build": "turbo run build",
+  "typecheck": "turbo run typecheck",
+  "lint": "turbo run lint"
+},
+<span class="pj-key" data-pj="devDependencies">"devDependencies"</span>: {
+  "turbo": "^2.8.20",
+  "wait-on": "^9.0.5"
+}</pre>
+            <div class="pj-list">
+              <button class="pj-row active" data-pj="name">name</button>
+              <button class="pj-row" data-pj="private">private</button>
+              <button class="pj-row" data-pj="workspaces">workspaces</button>
+              <button class="pj-row" data-pj="packageManager">packageManager</button>
+              <button class="pj-row" data-pj="scripts">scripts</button>
+              <button class="pj-row" data-pj="devDependencies">devDependencies</button>
+            </div>
+          </div>
+          <div class="panel pj-panel" id="pjPanel">
+            <h3><code>name: "root"</code></h3>
+            <div class="path">根包名</div>
+            <p>根包也是 workspace 里的一个包，但它 <code>private: true</code>，永远不会被发布。它不产出任何代码，只承载脚本与依赖管理。</p>
+            <p><b>为什么重要：</b>没有它，根目录就只是一个文件夹，而不是 workspace 图里的节点。</p>
+          </div>
+        </div>
+
+        <div class="section-head reveal" style="margin-top:48px;margin-bottom:24px">
+          <div class="kicker">脚本逐个拆</div>
+          <h2 style="font-size:clamp(22px,2.6vw,30px)">7 个脚本，各自解决一个问题</h2>
+        </div>
+
+        <div class="grid grid-2 scripts reveal">
+          <details class="acc">
+            <summary>🧹 clean:ports <span class="chev">▸</span></summary>
+            <div class="acc-body">
+              <p>开发时最烦的事之一：上次进程没关干净，3002 / 4001 被占，下次启动直接 <code>EADDRINUSE</code>。</p>
+              <p>它用 <code>lsof -ti :端口</code> 找到占用进程，<code>kill -9</code> 强杀。写在 dev 前面，每次启动先清场。</p>
+              <p class="dim">只适合本地开发——生产环境千万别这么干。</p>
+            </div>
+          </details>
+          <details class="acc">
+            <summary>🚀 dev <span class="chev">▸</span></summary>
+            <div class="acc-body">
+              <p><code>clean:ports && turbo run dev --parallel --filter=@autix/chat --filter=@autix/chat-web</code></p>
+              <p>先清端口，再让 Turbo 同时启动两个 dev 任务。<code>--parallel</code> 表示不等任务依赖，两个进程并行启动；<code>--filter</code> 只启动这两个包。</p>
+              <p class="dim">注意：<code>--parallel</code> 在 Turbo 2.x 已标记 deprecated；更推荐用 turbo.json 的 <code>persistent: true</code> 表达长驻任务。</p>
+            </div>
+          </details>
+          <details class="acc">
+            <summary>🧩 dev:chat / dev:chat-web <span class="chev">▸</span></summary>
+            <div class="acc-body">
+              <p>单独启动某一个进程。排查问题时非常有用：先用 <code>bun run dev:chat</code> 确认后端能起来，再起前端。</p>
+              <p><code>--filter=@autix/chat</code> 严格按包名匹配——名字写错一个字符就会报 "No package found"。</p>
+            </div>
+          </details>
+          <details class="acc">
+            <summary>📦 build / typecheck / lint <span class="chev">▸</span></summary>
+            <div class="acc-body">
+              <p>三个都是 <code>turbo run &lt;task&gt;</code>：Turbo 会到每个包里找同名脚本，按 turbo.json 的依赖关系执行，并尽可能复用缓存。</p>
+              <p>注意：如果某个包没有对应脚本，它不会报错，只会"跳过"——所以会出现 "Tasks: 0 successful" 的假成功。</p>
+            </div>
+          </details>
+          <details class="acc">
+            <summary>🔌 packageManager <span class="chev">▸</span></summary>
+            <div class="acc-body">
+              <p><code>"packageManager": "bun@1.4.4"</code> 是给 Corepack / Turbo / 编辑器看的"版本声明"：这个仓库用哪个包管理器、哪个版本。</p>
+              <p>它不是自动安装，但能让 Turbo 判断该用哪个锁文件、怎么执行脚本。</p>
+            </div>
+          </details>
+          <details class="acc">
+            <summary>🛠 devDependencies: turbo + wait-on <span class="chev">▸</span></summary>
+            <div class="acc-body">
+              <p><code>turbo</code>：任务编排器，根脚本里所有 <code>turbo run</code> 都靠它。</p>
+              <p><code>wait-on</code>：等某个端口 / URL 就绪。本仓库里它其实写在了 chat-web 的 dev 脚本里（<code>wait-on tcp:4001</code>），根目录这份是历史遗留。</p>
+            </div>
+          </details>
+        </div>
+
+        <div class="callout warn reveal" style="margin-top:16px">
+          <div class="ci">📝</div>
+          <div>
+            <b>为什么不给 package.json 写注释？</b>
+            JSON 标准不支持注释。Bun 会把 package.json 当 JSONC 解析（能读 <code>//</code> 和尾逗号），
+            但 Turbo 严格按 JSON 解析——实测 Turbo 2.8 / 2.11 都会在读到注释时报 <code>package_json_parse_error</code>。
+            <button class="btn small ghost" id="commentBtn" style="margin-left:8px">点我看报错</button>
+            <div id="commentOut" style="display:none;margin-top:10px">
+              <div class="term">
+                <div class="term-head"><span class="tdot r"></span><span class="tdot y"></span><span class="tdot g"></span><span class="ttitle">turbo · 注释演示</span></div>
+                <div class="term-body">
+                  <div class="line err">× Unable to parse package.json.</div>
+                  <div class="line">Expected a property but instead found '// The root of the monorepo'.</div>
+                  <div class="line dim">→ 注释说明只能放在独立文档里，这也是 README 和本页面存在的原因。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 04 TURBO ================= -->
+    <section class="section" id="turbo">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">04 / Turborepo</div>
+          <h2>它不是打包器，是任务编排器</h2>
+          <p class="lede">
+            Turbo 自己不编译任何代码。它做的事只有四件：看懂包图、看懂任务图、并行调度、给结果做缓存。
+            下面这个模拟会真的"跑"一次构建——点按钮试试。
+          </p>
+        </div>
+
+        <div class="grid grid-4 reveal">
+          <div class="card"><div class="ic">🗺️</div><h3>包图</h3><p>从 workspaces 读出三个包和它们的依赖关系。</p></div>
+          <div class="card violet"><div class="ic">🧾</div><h3>任务图</h3><p>读 turbo.json，知道 build 依赖 <code>^build</code>（上游包的 build）。</p></div>
+          <div class="card green"><div class="ic">⚡</div><h3>并行调度</h3><p>没有依赖关系的任务同时开跑，有依赖的按序执行。</p></div>
+          <div class="card amber"><div class="ic">💾</div><h3>缓存</h3><p>输入没变时直接回放结果，第二次构建通常不到 0.1s。</p></div>
+        </div>
+
+        <div class="reveal" style="margin-top:24px">
+          <div class="switch-row">
+            <button class="btn primary small" id="turboRun">▶ 第一次构建</button>
+            <button class="btn small" id="turboRunAgain">⚡ 再跑一次（命中缓存）</button>
+            <span class="chip" id="turboTimer">Time: —</span>
+            <span class="chip amber">@autix/contracts 没有 build 脚本 → 会被跳过</span>
+          </div>
+          <div class="pipeline">
+            <div class="task" id="taskContracts">
+              <div class="ttype">package</div>
+              <div class="tname">@autix/contracts</div>
+              <div class="tstat">build · 无脚本</div>
+            </div>
+            <div class="task" id="taskChat">
+              <div class="ttype">package</div>
+              <div class="tname">@autix/chat</div>
+              <div class="tstat">build · 等待中</div>
+            </div>
+            <div class="task" id="taskWeb">
+              <div class="ttype">package</div>
+              <div class="tname">@autix/chat-web</div>
+              <div class="tstat">build · 等待中</div>
+            </div>
+          </div>
+          <div class="term">
+            <div class="term-head"><span class="tdot r"></span><span class="tdot y"></span><span class="tdot g"></span><span class="ttitle">turbo run build</span></div>
+            <div class="term-body" id="turboLog">
+              <div class="line dim">点击上面的按钮，看 Turbo 怎么调度这三个包。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-2 reveal" style="margin-top:16px">
+          <div class="card">
+            <h3>turbo.json：只写"任务规则"</h3>
+            <pre class="code" style="margin-top:10px">{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "typecheck": { "dependsOn": ["^typecheck"] }
+  }
+}</pre>
+          </div>
+          <div class="grid" style="gap:10px">
+            <div class="card"><h3><code>"^build"</code></h3><p>先跑"我依赖的包"的 build，再跑我的。这就是任务图。</p></div>
+            <div class="card"><h3><code>outputs</code></h3><p>告诉 Turbo 哪些目录算产物，缓存时要保存它们。</p></div>
+            <div class="card"><h3><code>persistent: true</code></h3><p>dev 是长驻进程，不会退出。Turbo 需要知道这一点，才不会等它"结束"。</p></div>
+            <div class="card"><h3><code>cache: false</code></h3><p>dev 的结果是"一直在跑"，没有可缓存的产物，缓存反而会阻止启动。</p></div>
+          </div>
+        </div>
+
+        <div class="callout warn reveal" style="margin-top:16px">
+          <div class="ci">⚠️</div>
+          <div>
+            <b>三个真实踩过的 Turbo 坑：</b>
+            ① turbo.json 是 0 字节空文件时，任何命令都直接解析失败；② 任务在 turbo.json 里声明了、但没有包实现对应脚本时，会得到 "Tasks: 0 successful"；
+            ③ <code>--filter</code> 严格按包名匹配，包名少写作用域直接导致 dev 起不来。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 05 INSTALL ================= -->
+    <section class="section" id="install">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">05 / 依赖安装 · isolated linker</div>
+          <h2>node_modules 不是一坨，而是一个仓库</h2>
+          <p class="lede">
+            <code>bunfig.toml</code> 里只有一行：<code>linker = "isolated"</code>。它改变了"依赖装在哪、谁能看到谁"。
+            切换下面的开关看看区别。
+          </p>
+        </div>
+
+        <div class="switch-row reveal">
+          <label class="switch">
+            <input type="checkbox" id="linkerSwitch" checked />
+            <span class="slider"></span>
+          </label>
+          <span class="switch-label" id="linkerLabel"><b>isolated</b> · 每个包只看见自己声明的依赖（当前）</span>
+        </div>
+
+        <div class="install-grid reveal">
+          <div class="inst-panel dimmed" id="hoistedPanel">
+            <h4>hoisted（传统 npm / pnpm 默认类似）</h4>
+            <div class="sub">依赖尽量提升到根 node_modules，谁都看得见</div>
+            <div class="treebox">node_modules/
+├── <span class="d">next/</span>
+├── <span class="d">react/</span>
+├── <span class="d">@autix/contracts</span> → <span class="l">../../../packages/contracts</span>
+└── <span class="d">turbo/</span>
+
+<span class="l">clients/chat-web/node_modules/</span>
+└── （可能是空的）
+
+<span class="bad">⚠ 幽灵依赖：不声明也能 require('next')</span></div>
+            <div class="install-note">
+              <div class="label">后果</div>
+              <ul>
+                <li>看着方便，但依赖关系被隐藏</li>
+                <li>删掉一个依赖，别的包可能突然崩</li>
+                <li>升级/迁移时很难判断"到底谁在用"</li>
+              </ul>
+            </div>
+          </div>
+          <div class="inst-panel" id="isolatedPanel">
+            <h4>isolated（本仓库的真实选择）</h4>
+            <div class="sub">实体依赖藏在 .bun 存储，按声明逐包软链</div>
+            <div class="treebox">node_modules/
+├── .bun/<span class="l">（依赖实体）</span>
+├── turbo → <span class="l">.bun/turbo@…</span>
+└── wait-on → <span class="l">.bun/wait-on@…</span>
+
+<span class="l">clients/chat-web/node_modules/</span>
+├── <span class="hl">@autix/contracts</span> → <span class="l">../../../../packages/contracts</span>
+└── next → <span class="l">.bun/next@16.4.5/…</span>
+
+<span class="l">services/chat/node_modules/</span>
+├── <span class="hl">@autix/contracts</span> → <span class="l">../../../../packages/contracts</span>
+└── .bin/nest</div>
+            <div class="install-note">
+              <div class="label">后果</div>
+              <ul>
+                <li>没声明的依赖 = 看不见（幽灵依赖消失）</li>
+                <li>workspace 间直接软链到源码目录</li>
+                <li>改 contracts，两端立即生效</li>
+                <li>新增依赖必须装到"使用它的那个包"</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-3 reveal" style="margin-top:16px">
+          <div class="card"><div class="ic">📌</div><h3>依赖声明 = 可见性</h3><p>在 isolated 下，想在 chat-web 里 use next，就必须在 chat-web 的 package.json 里声明 next。</p></div>
+          <div class="card green"><div class="ic">🔗</div><h3>workspace 就是软链</h3><p><code>node_modules/@autix/contracts</code> 指向 <code>packages/contracts</code> 源码目录，不是复制品。</p></div>
+          <div class="card amber"><div class="ic">🧱</div><h3>锁文件只有一个</h3><p>根目录 bun.lock 记录整个仓库的解析结果；子包不各存一份。</p></div>
+        </div>
+
+        <div class="callout reveal" style="margin-top:16px">
+          <div class="ci">🧪</div>
+          <div><b>真实仓库里的证据：</b>根 node_modules 只有 turbo / wait-on 的软链和 .bun 存储；chat-web 的 <code>@autix/contracts</code> 指向 <code>../../../../packages/contracts</code>。这不是比喻，是 <code>readlink</code> 的真实输出。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 06 CONTRACTS ================= -->
+    <section class="section" id="contracts">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">06 / 共享契约</div>
+          <h2>改一个常量，两条链路同时变</h2>
+          <p class="lede">
+            <code>packages/contracts</code> 目前只有一个 <code>APP_NAME</code>，但它演示了 monorepo 最核心的价值：
+            <b>一份源码，被两个进程同时消费</b>。改一下下面的输入框试试。
+          </p>
+        </div>
+
+        <div class="demo reveal">
+          <div class="demo-head">
+            <div class="t">packages/contracts/src/index.ts</div>
+            <div class="chip green" id="contractsChip">live</div>
+          </div>
+          <div class="demo-body">
+            <pre class="code" style="margin-bottom:14px"><span class="cm">// 整个仓库唯一的"共享常量"</span>
+<span class="k">export const</span> APP_NAME = <span class="s" id="contractsLine">"llm"</span>;</pre>
+            <div class="field">
+              <label>APP_NAME =</label>
+              <input type="text" id="appNameInput" value="llm" maxlength="18" spellcheck="false" />
+              <span class="chip">改这里 → 下面两个消费方同时变</span>
+            </div>
+            <div class="demo-grid">
+              <div class="demo-col demo-web">
+                <div class="cap">浏览器 · clients/chat-web · :3002</div>
+                <div class="url">localhost:3002</div>
+                <h4 id="webTitle">llm</h4>
+                <span class="fakebtn">调用 API</span>
+                <p class="dim" style="font-size:12px;margin-top:10px">页面里的 <code>&lt;h1&gt;{APP_NAME}&lt;/h1&gt;</code></p>
+              </div>
+              <div class="demo-col demo-api">
+                <div class="cap">服务端 · services/chat · :4001</div>
+                <div class="route">GET /hello</div>
+                <pre id="apiMessage">{
+  "message": "Hello from Chat, shared APP_NAME=llm"
+}</pre>
+                <p class="dim" style="font-size:12px;margin-top:10px">Nest 里 <code>${APP_NAME}</code> 拼进返回值</p>
+              </div>
+            </div>
+            <p class="dim" style="font-size:12.5px;margin:12px 0 0">
+              真实时序：前端 HMR 立即刷新；后端由 <code>nest start --watch</code> 检测到 .ts 变化后自动重启，再刷新页面即可。
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-3 reveal" style="margin-top:16px">
+          <div class="card"><div class="ic">📤</div><h3>exports / types 指向源码</h3><p><code>"exports": "./src/index.ts"</code>、<code>"types": "./src/index.ts"</code>。不构建 dist 也能被两端消费——这是本章的偷懒技巧。</p></div>
+          <div class="card amber"><div class="ic">⚠️</div><h3>它只对打包器友好</h3><p>Node 直接 <code>import</code> 一个 .ts 会报 <code>ERR_UNKNOWN_FILE_EXTENSION</code>。生产环境应改成构建产物。</p></div>
+          <div class="card green"><div class="ic">🔁</div><h3>零版本、零发布</h3><p><code>version: 0.0.0</code> + workspace:*，改完即用。这就是 monorepo 内共享代码的最短路径。</p></div>
+        </div>
+
+        <div class="callout ok reveal" style="margin-top:16px">
+          <div class="ci">✅</div>
+          <div><b>2.7 的验收标准就是这条链路：</b>页面标题显示 <code>APP_NAME</code> 的值，点击按钮后 fetch 到 Nest 的 <code>/hello</code>，返回的 message 里也带着同一个 <code>APP_NAME</code>。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 07 TSCONFIG ================= -->
+    <section class="section" id="tsconfig">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">07 / TypeScript 边界</div>
+          <h2>四份 tsconfig，各管一段编译</h2>
+          <p class="lede">
+            这个仓库有 <code>tsconfig.base.json</code> 和每个包自己的 tsconfig。点标签切换——
+            重点是看"同一份配置，为什么在不同包里长得不一样"。
+          </p>
+        </div>
+
+        <div class="tabs reveal" id="ts-tabs">
+          <div class="tabbar">
+            <button class="tab active" data-tab="base">tsconfig.base.json</button>
+            <button class="tab" data-tab="web">chat-web</button>
+            <button class="tab" data-tab="contracts">contracts</button>
+            <button class="tab" data-tab="chat">chat（Nest）</button>
+          </div>
+          <div class="tabpanel active" data-panel="base">
+            <pre class="code">{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "paths": {
+      "@autix/contracts": ["./packages/contracts/src/index.ts"],
+      "@autix/contracts/*": ["./packages/contracts/src/*"]
+    }
+  }
+}</pre>
+            <div class="callout tip" style="margin-top:12px">
+              <div class="ci">🧭</div>
+              <div><b>只放"所有包都同意"的选项。</b>target 决定语法降到哪个年代；paths 是给编辑器和 tsc 的"路径别名"——它不是 Node 的解析规则，运行时还得靠 workspace 软链。</div>
+            </div>
+          </div>
+          <div class="tabpanel" data-panel="web">
+            <pre class="code">{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "strict": true,
+    "paths": { "@/*": ["./src/*"] }
+  }
+}</pre>
+            <div class="callout tip" style="margin-top:12px">
+              <div class="ci">🖥️</div>
+              <div><b>前端只做类型检查，不产出 JS。</b>真正把 JSX / TS 变成浏览器代码的是 Next（SWC / Turbopack），所以这里 <code>noEmit: true</code>；<code>moduleResolution: bundler</code> 允许无扩展名 import 和 exports 字段解析。</div>
+            </div>
+          </div>
+          <div class="tabpanel" data-panel="contracts">
+            <pre class="code">{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": true
+  },
+  "include": ["src"]
+}</pre>
+            <div class="callout tip" style="margin-top:12px">
+              <div class="ci">🧱</div>
+              <div><b>tsconfig 给"未来"准备的。</b>当前它并不产出 dist（package.json 直接指向 src）；但只要需要构建，<code>rootDir: ./src</code> + <code>outDir: ./dist</code> 就保证产物结构是 <code>dist/index.js</code>。</div>
+            </div>
+          </div>
+          <div class="tabpanel" data-panel="chat">
+            <pre class="code">{
+  "module": "nodenext",
+  "moduleResolution": "nodenext",
+  "target": "ES2023",
+  "experimentalDecorators": true,
+  "emitDecoratorMetadata": true,
+  "types": ["node", "jest"],
+  "outDir": "./dist",
+  "rootDir": "."
+}</pre>
+            <div class="callout warn" style="margin-top:12px">
+              <div class="ci">🧠</div>
+              <div><b>这是 Node 服务端，规则最"硬"。</b>nodenext 严格遵循 Node 的模块解析；<code>emitDecoratorMetadata</code> 让装饰器把类型信息写进 metadata，Nest 的依赖注入才能知道"构造器要什么"。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="reveal" style="margin-top:16px">
+          <div class="card">
+            <h3>装饰器 → 元数据 → 依赖注入</h3>
+            <div class="chain">
+              <span class="node2">@Injectable()<br /><span class="dim">标记可注入</span></span>
+              <span class="arr">→</span>
+              <span class="node2 hi">emitDecoratorMetadata</span>
+              <span class="arr">→</span>
+              <span class="node2">reflect-metadata<br /><span class="dim">运行时读取</span></span>
+              <span class="arr">→</span>
+              <span class="node2">Nest 容器<br /><span class="dim">自动 new</span></span>
+            </div>
+            <p style="margin-top:8px">所以 <code>main.ts</code> 第一行必须 <code>import 'reflect-metadata'</code>——没有它，容器读不到构造器的参数类型。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 08 WEB ================= -->
+    <section class="section" id="web">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">08 / 前端 · Next.js</div>
+          <h2>next.config.ts 里的四行，每一行都在解决一个跨包问题</h2>
+          <p class="lede">
+            前端代码本身很薄：一个按钮、一次 fetch。真正有意思的是它怎么"看见" workspace 里另一个包的源码。
+          </p>
+        </div>
+
+        <div class="grid grid-4 reveal">
+          <div class="card"><div class="ic">📦</div><h3>transpilePackages</h3><p>让 Next 把 <code>@autix/contracts</code> 的 TS 源码也一起编译，而不是当外部依赖跳过。</p></div>
+          <div class="card violet"><div class="ic">🚢</div><h3>output: standalone</h3><p>构建时把运行所需文件摊成一个可独立部署的目录，给后面的 Docker 用。</p></div>
+          <div class="card green"><div class="ic">🧲</div><h3>outputFileTracingRoot</h3><p>monorepo 里依赖可能在仓库根部。告诉 Next "往上找到这里为止"，否则 standalone 会漏文件。</p></div>
+          <div class="card amber"><div class="ic">🔧</div><h3>env</h3><p>把 <code>NEXT_PUBLIC_API_BASE_URL</code> 注入构建，默认 <code>http://localhost:4001</code>。</p></div>
+        </div>
+
+        <div class="demo reveal" style="margin-top:16px">
+          <div class="demo-head">
+            <div class="t">NEXT_PUBLIC_ 到底是怎么进到浏览器里的？</div>
+            <span class="chip cyan">构建期内联</span>
+          </div>
+          <div class="demo-body">
+            <div class="field">
+              <label>环境变量值：</label>
+              <input type="url" id="envUrl" value="http://localhost:4001" spellcheck="false" />
+              <button class="btn primary small" id="inlineBuild">模拟 next build</button>
+            </div>
+            <div class="switch-row">
+              <label class="switch">
+                <input type="checkbox" id="envPrefix" checked />
+                <span class="slider"></span>
+              </label>
+              <span class="switch-label">保留 <code>NEXT_PUBLIC_</code> 前缀（浏览器可读）</span>
+            </div>
+            <pre class="code" id="bundleCode">// 点击"模拟 next build"，看构建产物里到底写了什么</pre>
+            <div class="inline-browser">
+              <span>浏览器里的 <code>process.env.NEXT_PUBLIC_API_BASE_URL</code> =</span>
+              <span class="u" id="inlineBrowserOut">尚未构建</span>
+            </div>
+            <p class="dim" style="font-size:12.5px;margin:10px 0 0">
+              结论：<code>NEXT_PUBLIC_</code> 不是运行时读取，而是构建时被替换成字符串字面量。所以改了值必须重新构建；也所以它不能放密钥。
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-2 reveal" style="margin-top:16px">
+          <div class="card">
+            <h3>page.tsx 只有三个动作</h3>
+            <pre class="code" style="margin-top:10px">"use client";
+
+export default function Home() {
+  const [result, setResult] = useState("等待调用…");
+  async function callApi() {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_BASE_URL}/hello`
+    );
+    const data = await res.json();
+    setResult(data.message);
+  }
+  return &lt;&gt;
+    &lt;h1&gt;{APP_NAME}&lt;/h1&gt;
+    &lt;button onClick={callApi}&gt;调用 API&lt;/button&gt;
+    &lt;pre&gt;{result}&lt;/pre&gt;
+  &lt;/&gt;;
+}</pre>
+            <p style="margin-top:10px"><code>"use client"</code>：这个组件需要状态和点击事件，必须在浏览器里执行。</p>
+          </div>
+          <div class="grid" style="gap:10px">
+            <div class="card"><h3><code>wait-on tcp:4001</code></h3><p>chat-web 的 dev 脚本先等后端端口就绪再启动 Next。否则页面能开，但第一次点击就 fetch 失败。</p></div>
+            <div class="card"><h3><code>APP_NAME</code> 从哪来？</h3><p>直接 <code>import { APP_NAME } from "@autix/contracts"</code>。构建时被内联进前端 bundle，不是运行时请求。</p></div>
+            <div class="card"><h3>跨域问题留给后端</h3><p>浏览器访问 3002，API 在 4001，属于不同源。必须由 Nest 打开 CORS，前端不需要额外代理。</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 09 API ================= -->
+    <section class="section" id="api">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">09 / 后端 · NestJS</div>
+          <h2>五个文件，一条请求的完整生命周期</h2>
+          <p class="lede">
+            Nest 的代码看起来"绕"，是因为它把"谁负责什么"拆得很细：入口、模块、控制器、服务、契约。
+            点开每个文件，看看它只做哪一件事。
+          </p>
+        </div>
+
+        <div class="grid grid-2 scripts reveal">
+          <details class="acc" open>
+            <summary>🚪 src/main.ts · 进程入口 <span class="chev">▸</span></summary>
+            <div class="acc-body">
+              <p>建应用、开 CORS、监听 4001。它不认识任何业务逻辑，只负责"把 Nest 跑起来"。</p>
+              <pre class="code">import "reflect-metadata";
+import { NestFactory } from "@nestjs/core";
+import { AppModule } from "./app.module";
+
+const app = await NestFactory.create(AppModule);
+app.enableCors({
+  origin: process.env.CORS_ORIGIN || "http://localhost:3002",
+});
+await app.listen(process.env.PORT ?? 4001);</pre>
+            </div>
+          </details>
+          <details class="acc">
+            <summary>📦 src/app.module.ts · 装配说明书 <span class="chev">▸</span></summary>
+            <div class="acc-body">
+              <p>模块是 Nest 的"装配单元"：controllers 负责接请求，providers 负责提供逻辑，imports 负责引入别的模块。</p>
+              <pre class="code">@Module({
+  imports: [],
+  controllers: [AppController],
+  providers: [AppService],
+})
+export class AppModule {}</pre>
+            </div>
+          </details>
+          <details class="acc">
+            <summary>🛎️ src/app.controller.ts · 路由分发 <span class="chev">▸</span></summary>
+            <div class="acc-body">
+              <p>只负责"接住 HTTP 请求、把活交给 service"。构造器里注入 AppService，是 Nest 的依赖注入。</p>
+              <pre class="code">@Controller()
+export class AppController {
+  constructor(private readonly appService: AppService) {}
+
+  @Get("health")
+  getHealth() { return this.appService.getHealth(); }
+
+  @Get("hello")
+  getHello() { return this.appService.getHello(); }
+}</pre>
+            </div>
+          </details>
+          <details class="acc">
+            <summary>🧠 src/app.service.ts · 业务逻辑 <span class="chev">▸</span></summary>
+            <div class="acc-body">
+              <p>这里才出现 <code>APP_NAME</code>。业务逻辑与路由分离，控制器可以改、测试可以单独写。</p>
+              <pre class="code">@Injectable()
+export class AppService {
+  getHello() {
+    return { message: `Hello from Chat, shared APP_NAME=${APP_NAME}` };
+  }
+  getHealth() { return { ok: true }; }
+}</pre>
+            </div>
+          </details>
+          <details class="acc">
+            <summary>🔗 src/... · 它和 contracts 的关系 <span class="chev">▸</span></summary>
+            <div class="acc-body">
+              <p>service 里 <code>import { APP_NAME } from "@autix/contracts"</code>。在 isolated 布局下，这个 import 被解析到根 node_modules 的软链，最终指向 <code>packages/contracts/src/index.ts</code>。</p>
+              <p class="dim">TypeScript 编译时会把它编进 dist；运行时不需要单独部署 contracts 包。</p>
+            </div>
+          </details>
+        </div>
+
+        <div class="grid grid-3 reveal" style="margin-top:16px">
+          <div class="card"><h3><code>dev</code> · nest start --watch</h3><p>编译 + 启动 + 监听文件变化自动重启。开发时用。<b>注意：这里包了一层 bun 启动 CLI</b>。</p></div>
+          <div class="card violet"><h3><code>build</code> · nest build</h3><p>只编译到 dist，不常驻。CI / 部署前用。<b>同样包了 bun</b>。</p></div>
+          <div class="card green"><h3><code>start</code> · bun run dist/main.js</h3><p>直接跑编译产物，不再经过 CLI。生产启动用。</p></div>
+        </div>
+
+        <div class="callout warn reveal" style="margin-top:16px">
+          <div class="ci">🐛</div>
+          <div><b>为什么 dev / build 要写 <code>bun node_modules/.bin/nest</code>？</b>这是本项目对 Nest CLI 12 + Node 22.14 的 ESM 崩溃做的修复。原因在 <a href="#bun">10 · Bun vs Node</a>，值得完整看一遍。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 10 BUN VS NODE ================= -->
+    <section class="section" id="bun">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">10 / Bun vs Node</div>
+          <h2>"不是说用 Bun 吗，怎么又跟 Node 有关？"</h2>
+          <p class="lede">
+            这是整个学习过程中最反直觉的一次事故。Bun 不是"Node 的替代品"这么简单——
+            它同时扮演安装器、脚本运行器、运行时和 npx 替代品四个角色，而其中一个角色默认会把工作交给 Node。
+          </p>
+        </div>
+
+        <div class="grid grid-4 reveal">
+          <div class="card"><div class="ic">📥</div><h3>安装器</h3><p><code>bun install</code>：读写 node_modules 和 bun.lock，用 isolated 布局。</p></div>
+          <div class="card violet"><div class="ic">📜</div><h3>脚本运行器</h3><p><code>bun run dev</code>：执行 package.json scripts，按 PATH 找可执行文件。</p></div>
+          <div class="card green"><div class="ic">⚙️</div><h3>运行时</h3><p><code>bun dist/main.js</code>：直接执行 JS，等价于 node 的角色。</p></div>
+          <div class="card amber"><div class="ic">📦</div><h3>npx 替代</h3><p><code>bunx @nestjs/cli</code>：临时下载并执行 npm 包的 bin。</p></div>
+        </div>
+
+        <div class="callout reveal" style="margin-top:16px">
+          <div class="ci">🧵</div>
+          <div>
+            <b>关键规则：</b>包里的可执行文件第一行通常写着 <code>#!/usr/bin/env node</code>。bunx 和 bun run 默认<b>尊重这个 shebang</b>——
+            也就是说，<code>bunx @nestjs/cli</code> 用 Bun 下载 CLI，却用 <b>Node</b> 执行它。只有加 <code>--bun</code> 才会强制用 Bun 跑。
+          </div>
+        </div>
+
+        <div class="reveal" style="margin-top:22px">
+          <div class="switch-row">
+            <button class="btn primary small" id="incidentPlay">▶ 重演事故</button>
+            <span class="chip amber">时间线：2026-11-04 · Node 22.14.0</span>
+          </div>
+          <div class="inc-steps" id="incidentSteps">
+            <div class="inc-step" data-step>
+              <div class="idx">01</div>
+              <div class="txt"><b>执行 <code>bunx @nestjs/cli new services/chat</code></b> —— 教程里的原命令，没有锁版本。</div>
+            </div>
+            <div class="inc-step" data-step>
+              <div class="idx">02</div>
+              <div class="txt">npm registry 的 latest 已经是 <b>@nestjs/cli 12.0.11</b>（教程写作时是 11），自动拉到 12。</div>
+            </div>
+            <div class="inc-step" data-step>
+              <div class="idx">03</div>
+              <div class="txt">CLI 12 启动时加载 <b>Angular devkit 22</b> 的 package-manager executor。</div>
+            </div>
+            <div class="inc-step" data-step>
+              <div class="idx">04</div>
+              <div class="txt">executor.js 是 <b>CommonJS</b>，里面 <code>require("ora")</code>。</div>
+            </div>
+            <div class="inc-step" data-step>
+              <div class="idx">05</div>
+              <div class="txt"><b>ora 9.4.1 是纯 ESM</b>。Node 22.14 的 <code>require(esm)</code> 在循环依赖下直接抛错。</div>
+            </div>
+            <div class="inc-step bad" data-step>
+              <div class="idx">06</div>
+              <div class="txt"><b>💥 ERR_REQUIRE_CYCLE_MODULE</b>。CLI 还没开始干活就崩了，<code>nest start</code> 同理——因为启动阶段就会加载所有命令。</div>
+            </div>
+          </div>
+          <div class="term inc-error" id="incidentError">
+            <div class="term-head"><span class="tdot r"></span><span class="tdot y"></span><span class="tdot g"></span><span class="ttitle">node · ERR_REQUIRE_CYCLE_MODULE</span></div>
+            <div class="term-body">
+              <div class="line err">Error [ERR_REQUIRE_CYCLE_MODULE]: Cannot require() ES Module</div>
+              <div class="line">  .../ora/index.js in a cycle</div>
+              <div class="line">  from .../@angular-devkit/schematics/tasks/package-manager/executor.js</div>
+              <div class="line dim">Node.js v22.14.0</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="fix-diff reveal">
+          <div class="grid grid-2">
+            <div class="card">
+              <h3>修复：只改两行</h3>
+              <pre class="code"><span class="cm">// services/chat/package.json</span>
+"dev": <span class="hl">"bun node_modules/.bin/nest start --watch"</span>,
+"build": <span class="hl">"rm -rf dist tsconfig.tsbuildinfo && bun node_modules/.bin/nest build"</span></pre>
+              <p style="margin-top:10px">让 <b>CLI 本身</b>由 Bun 执行（Bun 的模块加载器不抛这个循环错误）；编译后的进程仍然由 node 启动，不受影响。</p>
+            </div>
+            <div class="card">
+              <h3>为什么不是换 Node？</h3>
+              <pre class="code"><span class="cm">// 方案对比</span>
+A. CLI 前加 bun        <span class="cm">// 最小改动，选它</span>
+B. 换 Nest 11 + CLI 11 <span class="cm">// 贴教程，CLI 11 用 ora 5（CJS）</span>
+C. 降 Node 20          <span class="cm">// 不支持 require(esm)，报另一个错</span></pre>
+              <p style="margin-top:10px">降 Node 20 会得到 <code>ERR_REQUIRE_ESM</code>；升 Node 24 同类循环问题依然存在。根因是依赖栈，不是 Node 版本。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout ok reveal" style="margin-top:16px">
+          <div class="ci">🧾</div>
+          <div>
+            <b>教程"能跑"但没写清楚的三个前提：</b>
+            ① 它写作时的 <code>@nestjs/cli</code> latest 是 11，而命令没锁版本；② 它默认机器上已经有 Node（全篇没有一句 Node 安装/版本要求）；
+            ③ 它的 2.5.4 顺序有问题——根 dev 提前引用了 2.6.1 才创建的 <code>@autix/chat</code>。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 11 STARTUP ================= -->
+    <section class="section" id="startup">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">11 / 启动链路</div>
+          <h2>一条命令，五个阶段，两个端口</h2>
+          <p class="lede">
+            <code>bun run dev</code> 背后不是魔法，而是一条有严格先后顺序的流水线。点播放按钮，跟着日志走一遍。
+          </p>
+        </div>
+
+        <div class="switch-row reveal">
+          <button class="btn primary small" id="startPlay">▶ 播放启动流程</button>
+          <span class="chip" id="startState">待启动</span>
+        </div>
+
+        <div class="seq-steps reveal" id="startSteps">
+          <div class="seq-step" data-stage="0"><div class="num">01</div><div class="ttl">清理端口</div><div class="ssub">clean:ports<br />3002 / 4001</div></div>
+          <div class="seq-step" data-stage="1"><div class="num">02</div><div class="ttl">Turbo 调度</div><div class="ssub">turbo run dev<br />--filter × 2</div></div>
+          <div class="seq-step" data-stage="2"><div class="num">03</div><div class="ttl">后端先起</div><div class="ssub">nest start --watch<br />→ :4001</div></div>
+          <div class="seq-step" data-stage="3"><div class="num">04</div><div class="ttl">前端等后端</div><div class="ssub">wait-on tcp:4001</div></div>
+          <div class="seq-step" data-stage="4"><div class="num">05</div><div class="ttl">前端就绪</div><div class="ssub">next dev --port 3002</div></div>
+        </div>
+
+        <div class="reveal">
+          <div class="ports">
+            <span class="port" id="portApi"><span class="led"></span> @autix/chat · :4001</span>
+            <span class="port" id="portWeb"><span class="led"></span> @autix/chat-web · :3002</span>
+          </div>
+          <div class="term" style="margin-top:14px">
+            <div class="term-head"><span class="tdot r"></span><span class="tdot y"></span><span class="tdot g"></span><span class="ttitle">bun run dev</span></div>
+            <div class="term-body" id="startLog">
+              <div class="line dim">点击"播放启动流程"，观察两个进程的上线顺序。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout tip reveal" style="margin-top:16px">
+          <div class="ci">⏱️</div>
+          <div><b>为什么后端必须先起？</b>因为前端 dev 脚本里有 <code>wait-on tcp:4001</code>。如果顺序反了：页面能打开，但用户第一次点击按钮就会 fetch 失败——表现像"前端坏了"，实际是后端没上来。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 12 REQUEST ================= -->
+    <section class="section" id="request">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">12 / 请求链路</div>
+          <h2>点一次按钮，到底发生了什么？</h2>
+          <p class="lede">
+            亲手点一次"调用 API"，看请求包怎么从浏览器跑到 Nest，再带着 JSON 回来。
+            你还可以在这个演示里关掉 CORS，看看浏览器是怎么拦截的。
+          </p>
+        </div>
+
+        <div class="reveal">
+          <div class="switch-row">
+            <span class="chip">Origin: http://localhost:3002</span>
+            <label class="switch">
+              <input type="checkbox" id="corsToggle" checked />
+              <span class="slider"></span>
+            </label>
+            <span class="switch-label" id="corsLabel">Nest 已开启 CORS（允许 3002）</span>
+            <span class="chip amber" id="reqState">待调用</span>
+          </div>
+
+          <div class="flow" id="flow">
+            <div class="endpoint browser" id="flowBrowser">
+              <div class="ep-head"><span class="dot3"></span> 浏览器 · clients/chat-web</div>
+              <div class="ep-body">
+                <span class="bp-url">localhost:3002</span>
+                <h4 id="flowTitle">llm</h4>
+                <button class="btn small primary" id="callApiBtn">调用 API</button>
+                <pre class="flow-result" id="flowResult">等待调用…</pre>
+              </div>
+            </div>
+            <div class="endpoint server" id="flowServer">
+              <div class="ep-head"><span class="dot3"></span> NestJS · services/chat · :4001</div>
+              <div class="ep-body">
+                <div class="srv-route">GET /hello</div>
+                <ul class="srv-steps">
+                  <li id="srvRoute">AppController.getHello()</li>
+                  <li id="srvService">AppService.getHello()</li>
+                  <li id="srvContract">APP_NAME = "llm"</li>
+                </ul>
+              </div>
+            </div>
+            <div class="packet" id="packet">GET /hello</div>
+          </div>
+
+          <div class="netlog" id="netlog">
+            <div class="row"><span class="n">①</span><span class="txt">按钮 onClick → fetch("http://localhost:4001/hello")</span></div>
+            <div class="row"><span class="n">②</span><span class="txt">浏览器自动带上 Origin: http://localhost:3002，发起请求</span></div>
+            <div class="row"><span class="n">③</span><span class="txt">Nest 路由匹配到 AppController.getHello() → 注入 AppService</span></div>
+            <div class="row"><span class="n">④</span><span class="txt">AppService 读取共享 APP_NAME，生成 JSON</span></div>
+            <div class="row"><span class="n">⑤</span><span class="txt">返回 200 + Access-Control-Allow-Origin，浏览器放行</span></div>
+            <div class="row"><span class="n">⑥</span><span class="txt">data.message → setState → 页面重渲染</span></div>
+          </div>
+
+          <div class="callout warn reveal" style="margin-top:14px">
+            <div class="ci">🚫</div>
+            <div><b>把上面的 CORS 开关关掉再点一次。</b>请求其实已经到达 Nest（服务端返回 200），但浏览器因为响应里没有 <code>Access-Control-Allow-Origin</code> 而拒绝把结果交给 JS——控制台会报 CORS error。<b>跨域是浏览器的规矩，不是服务器的。</b></div>
+          </div>
+        </div>
+
+        <div class="grid grid-3 reveal" style="margin-top:16px">
+          <div class="card"><div class="ic">✅</div><h3>这条链路同时验证了四件事</h3><p>共享包能用、两个进程能通信、CORS 通了、构建期环境变量注入成功。</p></div>
+          <div class="card violet"><div class="ic">🧩</div><h3>契约是唯一耦合点</h3><p>前端与后端之间不共享代码，只共享 contracts 里的定义。</p></div>
+          <div class="card green"><div class="ic">🧪</div><h3>错误分三层</h3><p>连不上 = 后端没起；CORS error = 浏览器拦截；返回值不对 = 逻辑问题。先分清层次，别乱改。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 13 PITFALLS ================= -->
+    <section class="section" id="pitfalls">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">13 / 踩坑档案</div>
+          <h2>11 个真实踩过的坑，按类型筛选</h2>
+          <p class="lede">
+            这些不是"可能会遇到的问题"，而是这次学习实际卡住过的点。每条都给出：现象、本质、修法。
+          </p>
+        </div>
+
+        <div class="filters reveal" id="pitFilters">
+          <button class="chip active" data-filter="all">全部</button>
+          <button class="chip" data-filter="startup">启动</button>
+          <button class="chip" data-filter="config">配置</button>
+          <button class="chip" data-filter="deps">依赖</button>
+          <button class="chip" data-filter="version">版本</button>
+          <span class="pit-count" id="pitCount">11 条</span>
+        </div>
+
+        <div class="reveal" id="pitList">
+          <details class="acc pit" data-cat="config">
+            <summary><span class="sev">高</span> turbo.json 是 0 字节空文件 <span class="chev">▸</span></summary>
+            <div class="acc-body"><p><b>现象：</b><code>bun run build</code> 报 <code>Unable to read repository configuration ... invalid JSON ... found the end of the file</code>。</p><p><b>本质：</b>Turbo 启动第一步就是读配置，空文件不是"默认配置"，而是解析失败。</p><p><b>修法：</b>写入合法 JSON（至少 <code>{"tasks": {}}</code>），再按需补任务。</p></div>
+          </details>
+          <details class="acc pit" data-cat="config">
+            <summary><span class="sev">高</span> "Tasks: 0 successful" 的假成功 <span class="chev">▸</span></summary>
+            <div class="acc-body"><p><b>现象：</b><code>bun run build</code> 显示 Packages in scope、Running build in 1 package，但最后 <code>Tasks: 0 successful, 0 total</code>。</p><p><b>本质：</b>turbo.json 声明了 build 任务，但唯一在 scope 里的包（contracts）没有 build 脚本，没有可执行的任务。</p><p><b>修法：</b>给包加 scripts，或接受"这个包不需要构建"的事实。</p></div>
+          </details>
+          <details class="acc pit" data-cat="config">
+            <summary><span class="sev low">低</span> --parallel 已弃用 <span class="chev">▸</span></summary>
+            <div class="acc-body"><p><b>现象：</b>启动时出现 <code>WARNING --parallel is deprecated and will be removed...</code>。</p><p><b>本质：</b>Turbo 2.x 推荐用 turbo.json 的 <code>persistent: true</code> 表达长驻任务，而不是命令行开关。</p><p><b>修法：</b>可以去掉 <code>--parallel</code>；它不影响运行，只是噪音。</p></div>
+          </details>
+          <details class="acc pit" data-cat="startup">
+            <summary><span class="sev">高</span> No package found with name '@autix/chat' <span class="chev">▸</span></summary>
+            <div class="acc-body"><p><b>现象：</b><code>bun run dev</code> 报 <code>× No package found with name '@autix/chat' in workspace</code>，直接退出。</p><p><b>本质：</b>根 dev 脚本 filter 了 @autix/chat，但 services/chat 当时还没创建；同时客户端包名是 <code>chat-web</code>，缺 <code>@autix/</code> 作用域。</p><p><b>修法：</b>先创建服务端并把客户端包名改成 <code>@autix/chat-web</code>；或用 <code>dev:chat-web</code> 单独启动。</p></div>
+          </details>
+          <details class="acc pit" data-cat="startup">
+            <summary><span class="sev mid">中</span> wait-on tcp:4001 一直等 <span class="chev">▸</span></summary>
+            <div class="acc-body"><p><b>现象：</b>chat-web 的 dev 脚本卡在 <code>wait-on tcp:4001</code>，3002 一直打不开。</p><p><b>本质：</b>前端 dev 依赖后端先起；后端没起或起不来，等待就是无限循环。</p><p><b>修法：</b>先跑 <code>bun run dev:chat</code> 确认 4001 活着，再跑前端；排查后端日志。</p></div>
+          </details>
+          <details class="acc pit" data-cat="version">
+            <summary><span class="sev">高</span> bunx 拉到 Nest CLI 12 后直接崩 <span class="chev">▸</span></summary>
+            <div class="acc-body"><p><b>现象：</b><code>bunx @nestjs/cli new services/chat</code> 报 <code>ERR_REQUIRE_CYCLE_MODULE</code>，CLI 还没开始工作就退出。</p><p><b>本质：</b>教程没锁 CLI 版本，latest 从 11 变成 12；CLI 12 的 Angular devkit 22 在 CommonJS 里 require 纯 ESM 的 ora 9，Node 22.14 的 require(esm) 循环检测抛错。而 bunx / bun run 默认尊重 bin 的 node shebang，用 Node 执行。</p><p><b>修法：</b>CLI 前加 <code>bun</code>（见 <a href="#bun">10 · Bun vs Node</a>），或换回 Nest 11 栈。</p></div>
+          </details>
+          <details class="acc pit" data-cat="config">
+            <summary><span class="sev low">低</span> 给 package.json 写注释 <span class="chev">▸</span></summary>
+            <div class="acc-body"><p><b>现象：</b>加 <code>//</code> 注释后 Turbo 报 <code>package_json_parse_error</code>。</p><p><b>本质：</b>JSON 标准不支持注释；Bun 能读 JSONC，但 Turbo 严格按 JSON 解析。</p><p><b>修法：</b>注释放独立文档；turbo.json 倒是有 <code>turbo.jsonc</code> 可以写注释。</p></div>
+          </details>
+          <details class="acc pit" data-cat="deps">
+            <summary><span class="sev">高</span> isolated 下的"幽灵依赖"消失 <span class="chev">▸</span></summary>
+            <div class="acc-body"><p><b>现象：</b>在某个包里 import 一个没在它 package.json 里声明的依赖，本地能跑、换台机器 / 严格安装后就 <code>Cannot find module</code>。</p><p><b>本质：</b>isolated linker 只把"声明过的依赖"软链给这个包；传统 hoisted 把依赖提到根 node_modules，谁都能碰到。</p><p><b>修法：</b>谁用谁装：<code>bun add &lt;pkg&gt; --filter @autix/chat-web</code>（或手改该包 package.json 后 <code>bun install</code>）。</p></div>
+          </details>
+          <details class="acc pit" data-cat="deps">
+            <summary><span class="sev mid">中</span> Node 直接 import contracts 的 .ts 源码 <span class="chev">▸</span></summary>
+            <div class="acc-body"><p><b>现象：</b><code>import("@autix/contracts")</code> 报 <code>ERR_UNKNOWN_FILE_EXTENSION ".ts"</code>；而 <code>require()</code> 却能拿到值。</p><p><b>本质：</b>contracts 的 exports 指向 <code>src/index.ts</code>，是为了让 Next / ts-node 这类能处理 TS 的工具消费；裸 Node 不认 .ts（当前 Node 22.14 的 type stripping 未开启）。</p><p><b>修法：</b>本章够用；生产环境给 contracts 加构建，exports 指向 dist。</p></div>
+          </details>
+          <details class="acc pit" data-cat="version">
+            <summary><span class="sev mid">中</span> 教程版本漂移：bun / turbo / Next 全都更新了 <span class="chev">▸</span></summary>
+            <div class="acc-body"><p><b>现象：</b>照着教程装出来的版本和教程截图不一致（bun 1.4.4 vs 1.3.11；Next 16.4.5 vs 16.2.3）。</p><p><b>本质：</b>教程是某个时间点的快照，命令没锁版本就会漂移。</p><p><b>修法：</b>先能跑通，再理解差异；关键命令写死版本（如 <code>@nestjs/cli@11</code>），或接受新版本并按报错修。</p></div>
+          </details>
+          <details class="acc pit" data-cat="startup">
+            <summary><span class="sev mid">中</span> 前端显示 undefined / 请求发到错误地址 <span class="chev">▸</span></summary>
+            <div class="acc-body"><p><b>现象：</b>页面能开，但 fetch 的 URL 是 <code>undefined/hello</code>。</p><p><b>本质：</b><code>NEXT_PUBLIC_API_BASE_URL</code> 没注入（next.config 的 env 没写、或变量没加 <code>NEXT_PUBLIC_</code> 前缀，浏览器拿不到）。</p><p><b>修法：</b>在 next.config.ts 的 env 里提供默认值；确认变量名以 <code>NEXT_PUBLIC_</code> 开头；改完重新 build/dev。</p></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 14 DIFF ================= -->
+    <section class="section" id="diff">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">14 / 教程 vs 实际</div>
+          <h2>我们和教程的差异，以及差异的原因</h2>
+          <p class="lede">
+            不是"教程错了"或"我们错了"，而是时间、版本和环境共同造成的偏差。这一节把差异摊开。
+          </p>
+        </div>
+
+        <div class="table-wrap reveal">
+          <table class="difftbl">
+            <thead><tr><th>项目</th><th>教程</th><th>我们的实际</th><th>原因 / 处理</th></tr></thead>
+            <tbody>
+              <tr><td>Bun 版本</td><td><span class="old">bun@1.3.11</span></td><td><span class="new">bun@1.4.4</span></td><td class="why">安装时 curl 到最新版；isolated linker 等特性一致，无阻塞。</td></tr>
+              <tr><td>Turbo</td><td><span class="old">^2.8.20</span></td><td><span class="new">实际 2.11.10</span></td><td class="why">^ 语义允许小版本升级。--parallel 弃用、缓存行为以实际为准。</td></tr>
+              <tr><td>Nest CLI</td><td><span class="old">@nestjs/cli ^11.0.0</span></td><td><span class="new">12.0.11 + 手动加 bun</span></td><td class="why"><code>bunx</code> 没锁版本拉到 latest 12；通过 dev/build 前加 bun 修复。</td></tr>
+              <tr><td>Next</td><td><span class="old">16.2.3</span></td><td><span class="new">16.4.5</span></td><td class="why">create-next-app 最新模板；next.config 的字段名兼容。</td></tr>
+              <tr><td>客户端版本</td><td><span class="old">0.0.0</span></td><td><span class="new">0.1.0</span></td><td class="why">脚手架默认；不影响运行，但 2.5.1 要求 0.0.0，属于没对齐的小差异。</td></tr>
+              <tr><td>根 dev：--parallel</td><td><span class="old">不带</span></td><td><span class="new">带（有 warning）</span></td><td class="why">当前也能用；推荐改用 persistent:true，不再依赖该开关。</td></tr>
+              <tr><td>教程 2.5.4 顺序</td><td><span class="old">先根 dev，后建 @autix/chat</span></td><td><span class="new">先做 2.6，再跑根 dev</span></td><td class="why">教程顺序有 bug：根 dev filter 的 @autix/chat 在 2.6.1 才创建。</td></tr>
+              <tr><td>Node 版本</td><td><span class="old">未提</span></td><td><span class="new">22.14.0</span></td><td class="why">教程全篇没写 Node 安装/版本，但 CLI 12 事故恰恰只发生在 Node 22.14 的 require(esm) 上。</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 15 QUIZ ================= -->
+    <section class="section" id="quiz">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">15 / 自检清单</div>
+          <h2>15 个问题，能答上来才算真的懂了</h2>
+          <p class="lede">
+            先自己在脑子里回答，再点开看答案。看完全部 15 条，这一章就算过关了。
+          </p>
+        </div>
+
+        <div class="quiz-bar reveal">
+          <div class="quiz-track"><div class="quiz-fill" id="quizFill"></div></div>
+          <span class="quiz-count" id="quizCount">0 / 15 已展开</span>
+          <button class="btn small ghost" id="quizReset">重置</button>
+        </div>
+
+        <div class="grid grid-2 reveal">
+          <details class="acc q"><summary>1. 为什么根 package.json 不写业务代码？<span class="chev">▸</span></summary><div class="acc-body ans">根包是调度台：管 workspaces、scripts、共享 devDependencies。业务代码放进 clients / services / packages，才能被独立开发、构建、部署。</div></details>
+          <details class="acc q"><summary>2. workspaces 的三个 glob 做了什么？<span class="chev">▸</span></summary><div class="acc-body ans">告诉包管理器：这三个目录下的每个 package.json 都是一个 workspace 包，一起进同一张依赖图、共用根锁文件。</div></details>
+          <details class="acc q"><summary>3. packageManager: "bun@1.4.4" 谁在用？<span class="chev">▸</span></summary><div class="acc-body ans">Corepack / Turbo / 编辑器。它声明仓库用哪个包管理器版本，Turbo 据此判断锁文件与执行方式。</div></details>
+          <details class="acc q"><summary>4. clean:ports 为什么要存在？<span class="chev">▸</span></summary><div class="acc-body ans">防止上次 dev 进程残留占用 3002 / 4001，导致新进程 EADDRINUSE。本地开发专用，生产不可用。</div></details>
+          <details class="acc q"><summary>5. dev 任务为什么 cache:false + persistent:true？<span class="chev">▸</span></summary><div class="acc-body ans">dev 是长驻进程，没有"完成"和"产物"，persistent:true 让 Turbo 知道要一直等；cache:false 避免缓存阻止它每次重新启动。</div></details>
+          <details class="acc q"><summary>6. dependsOn: ["^build"] 的 ^ 是什么意思？<span class="chev">▸</span></summary><div class="acc-body ans">表示上游依赖包的 build 任务。即"先构建我依赖的包，再构建我"，这是 Turbo 任务图的核心语法。</div></details>
+          <details class="acc q"><summary>7. 为什么 --filter=@autix/chat 会找不到包？<span class="chev">▸</span></summary><div class="acc-body ans">filter 严格按包名匹配。@autix/chat 当时不存在（services/chat 未创建），且客户端实际包名是 chat-web（缺作用域），所以直接报错退出。</div></details>
+          <details class="acc q"><summary>8. isolated 与 hoisted 最大区别？<span class="chev">▸</span></summary><div class="acc-body ans">hoisted 把依赖尽量提到根，所有包都能"蹭"到（幽灵依赖）；isolated 只在包自己的 node_modules 里软链它声明过的依赖，没声明就看不见。</div></details>
+          <details class="acc q"><summary>9. 为什么 package.json 不能写注释？<span class="chev">▸</span></summary><div class="acc-body ans">JSON 标准不允许。Bun 宽容（按 JSONC 解析），但 Turbo 严格按 JSON 解析，会在注释处报 package_json_parse_error。</div></details>
+          <details class="acc q"><summary>10. contracts 的 exports / types 为什么指向 src/index.ts？<span class="chev">▸</span></summary><div class="acc-body ans">为了让 Next、ts-node 这类能处理 TS 的工具直接消费源码，省掉构建步骤（零构建）。代价是裸 Node 直接 import 会不认 .ts。</div></details>
+          <details class="acc q"><summary>11. NEXT_PUBLIC_ 前缀的意义？<span class="chev">▸</span></summary><div class="acc-body ans">标记这个环境变量可以被内联进浏览器 bundle。没有这个前缀，Next 不会把它暴露给客户端，浏览器里就是 undefined。</div></details>
+          <details class="acc q"><summary>12. outputFileTracingRoot 解决什么？<span class="chev">▸</span></summary><div class="acc-body ans">monorepo 里依赖可能提升到仓库根。standalone 打包时如果不把追踪范围扩大到仓库根，就会漏掉文件，容器里跑不起来。</div></details>
+          <details class="acc q"><summary>13. CORS 是谁在拦截请求？<span class="chev">▸</span></summary><div class="acc-body ans">浏览器。请求其实到达了服务器，服务器也返回了 200；但响应缺少 Access-Control-Allow-Origin 时，浏览器拒绝把结果交给 JS。</div></details>
+          <details class="acc q"><summary>14. 为什么 nest 的 dev/build 命令前要加 bun？<span class="chev">▸</span></summary><div class="acc-body ans">Nest CLI 12 在 Node 22.14 下因 ESM/CJS 循环 require 崩溃。用 Bun 执行 CLI 可绕过；CLI 启动的编译产物进程仍由 node 跑，不受影响。</div></details>
+          <details class="acc q"><summary>15. 为什么改 contracts 后前端立即变、后端要重启？<span class="chev">▸</span></summary><div class="acc-body ans">前端由 Next dev server 监听源码并热更新；后端是 nest start --watch，改 .ts 后需要重新编译并重启进程才能生效。</div></details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 16 NEXT ================= -->
+    <section class="section" id="next">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div class="kicker">16 / 下一步</div>
+          <h2>2.8 预计会把这些"开发态"推向"可部署"</h2>
+          <p class="lede">
+            当前项目已经能前后端联通。下一章大概率会把 standalone 产物、环境变量、Compose 编排接上。
+          </p>
+        </div>
+
+        <div class="roadmap reveal">
+          <div class="rm"><div class="tag">2.8</div><div><h4>前后端联通到可部署</h4><p>把两个进程从"本地 dev"变成"可构建、可容器化"的形态。</p></div></div>
+          <div class="rm"><div class="tag">Docker</div><div><h4>output: standalone 派上用场</h4><p>Next 的 standalone 产物 + Nest 的 dist，各自做成镜像；outputFileTracingRoot 保证依赖不丢。</p></div></div>
+          <div class="rm"><div class="tag">Env</div><div><h4>用环境变量驱动配置</h4><p>API 地址、端口、CORS origin 从写死的 localhost 变成部署环境注入，构建期变量与运行期变量分开管理。</p></div></div>
+          <div class="rm"><div class="tag">Compose</div><div><h4>infra/compose 编排两个服务</h4><p>chat-web（3002）+ chat（4001）编成一个 compose，网络互通、启动依赖、健康检查补上。</p></div></div>
+          <div class="rm"><div class="tag">契约</div><div><h4>contracts 增加真实类型</h4><p>把 APP_NAME 升级为接口类型（如 HelloResponse），后端返回、前端消费都由类型保证一致。</p></div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="files">
+        <span class="chip">docs/lecture/index.html</span>
+        <span class="chip">docs/lecture/style.css</span>
+        <span class="chip">docs/lecture/app.js</span>
+        <span class="chip">docs/第二章项目讲义.md</span>
+      </div>
+      <p>基于仓库真实配置与本次学习中遇到的 11 个坑生成 · 2026-11-04</p>
+      <p class="dim">所有交互都在本地运行：没有外部字体、没有 CDN、没有后端，双击即开。</p>
+      <p style="margin-top:14px"><a href="#top">回到顶部 ↑</a></p>
+    </div>
+  </footer>
+
+  <button id="toTop" title="回到顶部">↑</button>
+
+  <script src="app.js"></script>
+</body>
+</html>
