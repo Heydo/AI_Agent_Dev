@@ -85,4 +85,59 @@ export class LlmController {
   async promptToModel(@Body() body: { input: string }) {
     return this.llmService.promptToModel(body.input);
   }
+
+  /**
+   * 通过调用链一次性返回结果：模板 → 模型 → 字符串解析
+   *
+   * 调用方式：POST /api/langchain/chain-invoke，body 为 { "input": "..." }
+   * 与 prompt-to-model 的区别：处理逻辑封装在 requirementChain 里，controller 只负责传参。
+   */
+  @Post('chain-invoke')
+  async chainInvoke(@Body() body: { input: string }) {
+    return this.llmService.chainInvoke(body.input);
+  }
+
+  /**
+   * 通过调用链流式返回结果（Content-Type: text/event-stream，边生成边写回响应）
+   *
+   * 调用方式：POST /api/langchain/chain-stream，body 为 { "input": "..." }
+   * 与 3.4 的 stream 接口不同：链尾接了 StringOutputParser，
+   * 所以 chunk 已经是字符串，直接 res.write(chunk) 即可，不需要再取 chunk.content。
+   *
+   * @param body 包含输入参数的对象，其中input属性为字符串类型
+   * @param res Express 响应对象，用于直接写入事件流
+   */
+  @Post('chain-stream')
+  async chainStream(@Body() body: { input: string }, @Res() res: Response) {
+    // 声明响应类型为事件流，前端可用 fetch 读取响应体并逐块消费
+    res.setHeader('Content-Type', 'text/event-stream');
+    // 禁止缓存，避免代理或浏览器缓存流式内容
+    res.setHeader('Cache-Control', 'no-cache');
+    // 保持长连接，支持服务端持续推送
+    res.setHeader('Connection', 'keep-alive');
+
+    // stream() 返回的是 Promise，先 await 得到可异步迭代的流
+    const stream = await this.llmService.chainStream(body.input);
+
+    // 逐块写出，chunk 已被 StringOutputParser 转成字符串
+    for await (const chunk of stream) {
+      res.write(chunk);
+    }
+
+    // 所有分块发送完毕，结束响应
+    res.end();
+  }
+
+  /**
+   * 通过调用链批量执行多条输入
+   *
+   * 调用方式：POST /api/langchain/chain-batch，body 为 { "inputs": ["...", "..."] }
+   * 批量逻辑与并发调度在 service 层由 Runnable.batch 完成，controller 只做透传。
+   *
+   * @param body 包含 inputs 数组的对象
+   */
+  @Post('chain-batch')
+  async chainBatch(@Body() body: { inputs: string[] }) {
+    return this.llmService.chainBatch(body.inputs);
+  }
 }

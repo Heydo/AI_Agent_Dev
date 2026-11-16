@@ -6,6 +6,8 @@ import {
   type BaseMessage,
 } from '@langchain/core/messages';
 import { requirementPrompt } from './requirement.prompt-builder';
+// 3.6 构建的调用链：提示模板 → 模型 → 字符串解析器，模块级单例，可复用
+import { requirementChain } from './requirement.chain';
 
 /**
  * LlmService 服务类，提供与语言模型交互的服务
@@ -90,5 +92,55 @@ export class LlmService {
     const messages = await requirementPrompt.formatMessages({ input }); // 格式化提示消息
     const response = await this.model.invoke(messages); // 调用模型获取响应
     return { result: response.content }; // 返回响应内容
+  }
+
+  /**
+   * 通过调用链执行一次完整流程：提示模板 → 模型 → 字符串解析
+   *
+   * 与 promptToModel 的区别：这里调用的是整条 requirementChain，
+   * 输出已被 StringOutputParser 转成字符串，不需要再取 .content 或 toString()。
+   *
+   * invoke 来自 Runnable 接口（requirementChain 是 RunnableSequence）。
+   *
+   * @param input - 用户输入的原始文本内容
+   * @returns 解析后的纯文本结果
+   */
+  async chainInvoke(input: string) {
+    // 传的是链首模板需要的变量对象；返回值是链尾解析器的输出，即 string
+    const result = await requirementChain.invoke({ input });
+    return { result };
+  }
+
+  /**
+   * 以流的方式执行同一条链，边生成边返回
+   *
+   * stream 来自 Runnable 接口，返回 Promise<IterableReadableStream<string>>：
+   * - 链尾是 StringOutputParser，所以每个 chunk 都是字符串；
+   * - 与 3.4 的 model.stream 不同，这里不需要再读 chunk.content。
+   *
+   * @param input - 用户输入的原始文本内容
+   * @returns 可异步迭代的字符串流
+   */
+  async chainStream(input: string) {
+    // 注意这里是异步返回，controller 中需要先 await 再 for await 迭代
+    return requirementChain.stream({ input });
+  }
+
+  /**
+   * 用同一条链批量处理多条输入
+   *
+   * batch 来自 Runnable 接口：接收输入数组，按输入顺序返回输出数组；
+   * 底层会并发调度，比在业务代码里手写 for 循环逐条调用更高效。
+   *
+   * @param inputs - 用户输入的原始文本数组
+   * @returns 带序号的结果数组，便于和输入一一对应
+   */
+  async chainBatch(inputs: string[]) {
+    // 链首模板需要 { input } 对象，这里先把字符串数组映射成对象数组
+    const results = await requirementChain.batch(
+      inputs.map((input) => ({ input })),
+    );
+    // 输出顺序与 inputs 一致，补上 index 便于前端核对
+    return results.map((result, i) => ({ index: i + 1, result }));
   }
 }
