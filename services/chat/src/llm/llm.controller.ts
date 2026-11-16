@@ -67,4 +67,22 @@ export class LlmController {
     const results = await this.llmService.batchDemo(body.inputs);
     return { results };
   }
+
+  /**
+   * 渲染提示词模板并返回结果，不调用大模型
+   * @param body 包含输入参数的对象，其中input属性为字符串类型
+   */
+  @Post('prompt-preview')
+  async promptPreview(@Body() body: { input: string }) {
+    return this.llmService.promptPreview(body.input);
+  }
+
+  /**
+   * 将模板渲染结果发送给大模型，并返回模型输出
+   * @param body 包含输入参数的对象，其中input属性为字符串类型
+   */
+  @Post('prompt-to-model')
+  async promptToModel(@Body() body: { input: string }) {
+    return this.llmService.promptToModel(body.input);
+  }
 }

@@ -5,14 +5,11 @@ import {
   SystemMessage,
   type BaseMessage,
 } from '@langchain/core/messages';
+import { requirementPrompt } from './requirement.prompt-builder';
 
 /**
- * LlmService 服务类
- * 使用 @Injectable() 装饰器标记为可注入的服务，可在 Angular 应用中通过依赖注入使用
- */
-/**
- * LlmService 类，提供与语言模型交互的服务
- * 使用@Injectable()装饰器标记为可注入的服务
+ * LlmService 服务类，提供与语言模型交互的服务
+ * 使用 @Injectable() 装饰器标记为可注入，实例由 NestJS 依赖注入容器管理
  */
 @Injectable()
 export class LlmService {
@@ -70,5 +67,28 @@ export class LlmService {
     const responses = await this.model.batch(messageGroups);
     // 将响应内容转换为字符串并返回
     return responses.map((item) => item.content.toString());
+  }
+
+  /**
+   * 预览提示词渲染结果（仅渲染模板，不调用模型）
+   * @param input - 用户输入的原始文本内容
+   * @returns 包含渲染后提示词文本的对象，文本格式为 "System: ...\nHuman: ..."
+   */
+  async promptPreview(input: string) {
+    // invoke 返回 ChatPromptValue（提示词值对象），toString() 可得到完整提示词文本
+    const promptValue = await requirementPrompt.invoke({ input });
+    return { rendered: promptValue.toString() };
+  }
+
+  /**
+   * 将用户输入套用提示词模板后发送给模型，并返回模型响应
+   * @param input - 用户输入的原始文本内容
+   * @returns 包含模型响应内容的对象
+   */
+  async promptToModel(input: string) {
+    // formatMessages 返回 BaseMessage[]，保留 system / human 角色，可直接传给聊天模型
+    const messages = await requirementPrompt.formatMessages({ input }); // 格式化提示消息
+    const response = await this.model.invoke(messages); // 调用模型获取响应
+    return { result: response.content }; // 返回响应内容
   }
 }
